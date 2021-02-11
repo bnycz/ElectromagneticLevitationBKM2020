@@ -1,0 +1,328 @@
+Include "variables.txt";
+
+DefineConstant
+[
+	turns = {5, Name "Geometry / Number of coil turns"},
+	rc = {0.003, Name "Geometry / Coil wire radius"},
+	rFirst = {0.01, Name "Geometry / Coil radius during first turn"},
+	rLast = {iLast, Name "Geometry / Coil radius during last turn"},
+	hc = {0.04, Name "Geometry / Coil height"},
+	rb = {0.0025, Name "Geometry / bath radius"},
+	lb = {0.1001, Name "Geometry / Infinite box width"},
+	ppt = {4, Name "Points per turn"},
+	npts = {20, Name "Number of points in inductor"},
+	fp = 	{iFieldPenetration, Name "Field penetration"},
+	yb = 	{iBatchPosition, Name "Batch position"}
+];
+lc = rc/2.5; // Mesh characteristic length
+lc2 = lc;
+lc3 = 0;
+front3d = 1; // Set to 1 if Frontal 3D mesh algorithm is used
+nn = (0.1/lc); // Mesh subdivisions per turn, used with Frontal 3D
+
+If(front3d == 1)
+  Mesh.Algorithm3D = 4; // Frontal 3D
+EndIf
+Mesh.Optimize = 1;
+
+
+
+// inductor
+
+//Tworzenie koła w miejscu początkowym
+p = newp;
+Point(p)=	{0,	-rFirst, 		-hc/2,		lc};
+Point(p+1)=	{0,	-rFirst+rc, 	-hc/2, 		lc};
+Point(p+2)=	{0,	-rFirst, 		-hc/2+rc,	lc};
+Point(p+3)=	{0,	-rFirst-rc,		-hc/2,		lc};
+Point(p+4)=	{0,	-rFirst,	 	-hc/2-rc,	lc};
+c = newl;
+Circle(c) = {p+1,p,p+2};
+Circle(c+1) = {p+2,p,p+3};
+Circle(c+2) = {p+3,p,p+4};
+Circle(c+3) = {p+4,p,p+1};
+ll = newll;
+Line Loop(ll) = {c,c+1,c+2,c+3};
+s = news;
+Plane Surface(s) = {ll};
+
+tmp[] = {s};
+vol_coil[] = {};
+
+rcCurrent = rFirst;
+radius = -Pi/2;
+
+
+//Wyciąganie po spirali
+For i In {1:npts}	
+
+	//Segmenty w kształcie łuku
+	
+
+	x1 = rcCurrent * Cos(radius);
+	y1 = rcCurrent * Sin(radius);
+	rcCurrent += (rLast-rFirst)/npts;
+	radius+=2*Pi/(ppt);
+	x3 = (rcCurrent) * Cos(radius);
+	y3 = (rcCurrent) * Sin(radius);
+	l_13 = Sqrt((x1-x3)*(x1-x3)+(y1-y3)*(y1-y3));
+	alfa = 2*Pi/(ppt);
+	t_temp = l_13/(2*Sin(alfa/2)) ;
+	
+	x2 = 0;
+	y2 = 0;	
+			
+	W = x1-x3;
+	Wa = y1-y3;
+	Wb = x1*y3 - x3*y1;
+	a = Wa/W;
+	b = Wb/W;
+	
+	x13 = (x1 + x3)/2;
+	y13 = a * x13 + b;
+	
+	ap = -1/a;
+	bp = y13 - ap*x13;
+	
+	A = 1+ap*ap;
+	B = 2*ap*bp - 2*x1 - 2*ap*y1;
+	C = x1*x1 + y1*y1 - 2*bp*y1 + bp*bp - t_temp*t_temp;
+	
+	delta = B*B - 4*A*C;
+	
+	If(delta>0)
+		x21 = (-B - Sqrt(delta))/(2*A);
+		x22 = (-B + Sqrt(delta))/(2*A);
+	EndIf
+	If(delta==0)
+		x21 = (-B)/(2*A);
+		x22 = x21;
+	EndIf
+	If(delta<0)
+		Error("Błąd podczas obliczania punktu osi wyciągnięcia łącznika");
+	EndIf
+	
+	y21 = ap*x21 + bp;
+	y22 = ap*x22 + bp;
+	
+	x2=x21;
+	y2=y21;
+
+	If(Sqrt(x21*x21 + y21*y21)>Sqrt(x22*x22 + y22*y22))
+		x2=x22;
+		y2=y22;
+	EndIf
+	
+
+	
+	If(front3d == 1)
+		tmp[] = Extrude {{ 0,0,hc/npts },  { 0,0,1 }, { x2,y2,0 }, (2*Pi/ppt) }
+		{ Surface {tmp[0]}; Layers{nn};};
+	EndIf
+	If(front3d == 0)
+		tmp[] = Extrude {{ 0,0,hc/npts },  { 0,0,1 }, { x2,y2,0 }, (2*Pi/ppt) }
+		{ Surface {tmp[0]}; };
+	EndIf
+	vol_coil[] += tmp[1];
+EndFor
+
+//Przewinięcie
+/*If(front3d == 1)
+	tmp[] = Extrude {lb/4 ,0,0}{ Surface {tmp[0]}; Layers{nn};};
+EndIf
+If(front3d == 0)
+	tmp[] = Extrude {lb/4,0,0}{ Surface {tmp[0]}; };
+EndIf
+vol_coil[] += tmp[1];
+*/
+If(front3d == 1)
+	tmp[] = Extrude {{ 0,0,0 },  { 0,-1,0}, { 0,rLast,(hc/2+1.1*rc) }, (Pi) }
+	{ Surface {tmp[0]}; Layers{nn};};
+EndIf
+If(front3d == 0)
+	tmp[] = Extrude {{ 0,0,0 },  { 0,1,0}, { lb/4,(hc+1.1*rc)/2,0 }, (Pi)  }
+	{ Surface {tmp[0]}; };
+EndIf
+vol_coil[] += tmp[1];
+
+/*If(front3d == 1)
+	tmp[] = Extrude {-lb/4 ,0,0}{ Surface {tmp[0]}; Layers{nn};};
+EndIf
+If(front3d == 0)
+	tmp[] = Extrude {-lb/4,0,0}{ Surface {tmp[0]}; };
+EndIf
+vol_coil[] += tmp[1];
+*/
+
+For i In {1:4}
+	If(front3d == 1)
+		tmp[] = Extrude {{ 0,0,hc/npts },  { 0,0,1 }, { 0,0,0 }, -(Pi/2) }
+		{ Surface {tmp[0]}; Layers{nn};};
+	EndIf
+	If(front3d == 0)
+		tmp[] = Extrude {{ 0,0,hc/npts },  { 0,0,1 }, { 0,0,0 }, -(Pi/2)  }
+		{ Surface {tmp[0]}; };
+	EndIf
+	vol_coil[] += tmp[1];
+EndFor
+
+
+//wyciągnięcie drugiego wąsa
+If(front3d == 1)
+	tmp[] = Extrude {-lb/2 ,0,0}{ Surface {tmp[0]}; Layers{nn};};
+EndIf
+If(front3d == 0)
+	tmp[] = Extrude {-lb/2,0,0}{ Surface {tmp[0]}; };
+EndIf
+
+vol_coil[] += tmp[1];
+out = tmp[0];
+
+//wyciąganie pierwszego "wąsa"
+If(front3d == 1)
+	tmp[] = Extrude {-lb/2,0,0}{ Surface{s}; Layers{nn};};
+EndIf
+If(front3d == 0)
+	tmp[] = Extrude {-lb/2,0,0}{ Surface{s}; };
+EndIf
+
+vol_coil[] += tmp[1];
+in = tmp[0];
+
+
+// batch
+
+p = newp;
+Point(p) = {0,0,yb,fp};
+Point(p+1) = {rb,0,yb,fp};
+Point(p+2) = {0,rb,yb,fp};
+Point(p+3) = {-rb,0,yb,fp};
+Point(p+4) = {0,-rb,yb,fp};
+Point(p+5) = {0,0,-rb+yb,fp};
+Point(p+6) = {0,0,rb+yb,fp};
+
+c = newl;
+Circle(c) = {p+1,p,p+2};
+Circle(c+1) = {p+2,p,p+3};
+Circle(c+2) = {p+3,p,p+4};
+Circle(c+3) = {p+4,p,p+1};
+Circle(c+4) = {p+2,p,p+5};
+Circle(c+5) = {p+5,p,p+4};
+Circle(c+6) = {p+4,p,p+6};
+Circle(c+7) = {p+6,p,p+2};
+Circle(c+8) = {p+1,p,p+6};
+Circle(c+9) = {p+6,p,p+3};
+Circle(c+10) = {p+3,p,p+5};
+Circle(c+11) = {p+5,p,p+1};
+
+ll = newll;
+s = news;
+Line Loop(ll) = {(c+1),(c+7),-(c+9)};
+Surface(s) = {ll};
+Line Loop(ll+1) = {(c+9),(c+2),(c+6)};
+Surface(s+1) = {ll+1};
+Line Loop(ll+2) = {-(c+7),-(c+8),c};
+Surface(s+2) = {ll+2};
+Line Loop(ll+3) = {-(c+10),-(c+1),(c+4)};
+Surface(s+3) = {ll+3};
+Line Loop(ll+4) = {-(c+4),-(c+11),-c};
+Surface(s+4) = {ll+4};
+Line Loop(ll+5) = {-(c+2),(c+10),(c+5)};
+Surface(s+5) = {ll+5};
+Line Loop(ll+6) = {-(c+6),(c+3),(c+8)};
+Surface(s+6) = {ll+6};
+Line Loop(ll+7) = {-(c+3),(c+11),-(c+5)};
+Surface(s+7) = {ll+7};
+
+n = news;
+v = newv;
+Surface Loop(n) = {s+7,s+6,s+1,s,s+4,s+5,s+3,s+2};
+
+Volume(v) = {n};
+tmp[] = {v};
+
+vol_tube = tmp[0];
+
+
+// box
+p = newp;
+Point(p) = {-lb/2,-lb/2,-lb/2, lc3};
+Point(p+1) = {lb/2,-lb/2,-lb/2, lc3};
+Point(p+2) = {lb/2,lb/2,-lb/2, lc3};
+Point(p+3) = {-lb/2,lb/2,-lb/2, lc3};
+Point(p+4) = {-lb/2,-lb/2,lb/2, lc3};
+Point(p+5) = {lb/2,-lb/2,lb/2, lc3};
+Point(p+6) = {lb/2,lb/2,lb/2, lc3};
+Point(p+7) = {-lb/2,lb/2,lb/2, lc3};
+l = newl;
+Line(l) = {p,p+1};
+Line(l+1) = {p+1,p+2};
+Line(l+2) = {p+2,p+3};
+Line(l+3) = {p+3,p};
+Line(l+4) = {p+4,p+5};
+Line(l+5) = {p+5,p+6};
+Line(l+6) = {p+6,p+7};
+Line(l+7) = {p+7,p+4};
+Line(l+8) = {p, p+4};
+Line(l+9) = {p+1, p+5};
+Line(l+10) = {p+2, p+6};
+Line(l+11) = {p+3, p+7};
+ll = newll;
+Line Loop(ll) = Boundary {Surface{in}; };
+Line Loop(ll+1) = {l+8, -(l+7), -(l+11), l+3};
+Line Loop(ll+2) = Boundary {Surface{out}; };
+Line Loop(ll+3) = {l+9, l+5, -(l+10), -(l+1)};
+Line Loop(ll+4) = {l,l+1,l+2,l+3};
+Line Loop(ll+5) = {l+4,l+5,l+6,l+7};
+Line Loop(ll+6) = {l+2, l+11, -(l+6), -(l+10)};
+Line Loop(ll+7) = {l, l+9, -(l+4), -(l+8)};
+s = news;
+tmp[] = {ll+1, ll};
+tmp[] += ll+2;
+Plane Surface(s) = tmp[];
+tmp[] = {ll+3};
+
+Plane Surface(s+1) = tmp[];
+Plane Surface(s+2) = {ll+4};
+Plane Surface(s+3) = {ll+5};
+Plane Surface(s+4) = {ll+6};
+Plane Surface(s+5) = {ll+7};
+sl = newsl;
+skin_coil[] = CombinedBoundary{ Volume{vol_coil[]}; };
+skin_coil[] -= {in, out};
+Surface Loop(sl) = {s:s+5,skin_coil[]};
+Surface Loop(sl+1) = CombinedBoundary{ Volume{vol_tube[]}; };
+v = newv;
+Volume(v) = {sl, sl+1};
+
+COIL = 1000;
+TUBE = 1001;
+AIR = 1002;
+SKIN_COIL = 2000;
+SKIN_TUBE = 2001;
+IN = 2002;
+OUT = 2003;
+INF = 2004;
+Physical Volume(COIL) = {vol_coil[]};
+Physical Volume(TUBE) = {vol_tube[]};
+Physical Volume(AIR) = {v};
+Physical Surface(SKIN_COIL) = {skin_coil[]};
+//Physical Surface(SKIN_TUBE) = CombinedBoundary{ Volume{vol_tube[]}; };
+Physical Surface(IN) = in;
+Physical Surface(OUT) = out;
+Physical Surface(INF) = {s:s+5};
+
+
+// Cohomology computation for the T-Omega method
+Cohomology(1) {{AIR, TUBE},{}};
+Cohomology(1) {{AIR, COIL},{}};
+
+// Alternative cohomology computation for the T-Omega method
+// - Faster, but requires cohomology basis selection
+//Homology(2) {{TUBE},{SKIN_TUBE}};
+//Homology(1) {{SKIN_COIL},{}};
+//Cohomology(1) {{AIR},{}};
+
+// Cohomology computation for the A-V method
+Cohomology(1) {{COIL},{IN, OUT}};
+Cohomology(1) {{TUBE},{}};

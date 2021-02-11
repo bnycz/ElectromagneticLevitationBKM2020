@@ -1,0 +1,4 @@
+	iLast =					0.414214;
+	iBatchPosition = 		0.02;
+	iFrequency = 			0.00122066;
+	iFieldPenetration = 	1.92969e-313;
